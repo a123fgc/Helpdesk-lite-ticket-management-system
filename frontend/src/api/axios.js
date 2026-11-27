@@ -1,5 +1,23 @@
 import axios from 'axios';
 
+/** Return a displayable, user-facing message from an Axios/API error. */
+export function getApiErrorMessage(error, fallback = 'Something went wrong. Please try again.') {
+  const payload = error?.response?.data;
+  const value = payload && typeof payload === 'object'
+    ? (payload.error ?? payload.message)
+    : undefined;
+
+  if (typeof value === 'string' && value.trim()) return value.trim();
+  if (value && typeof value === 'object'
+      && typeof value.message === 'string' && value.message.trim()) {
+    return value.message.trim();
+  }
+
+  if (!error?.response) return 'Unable to reach the server. Check your connection and try again.';
+  if (error.response.status === 404) return 'The authentication service could not be found. Please contact support.';
+  return fallback;
+}
+
 /**
  * Single API client for the whole app.
  *
