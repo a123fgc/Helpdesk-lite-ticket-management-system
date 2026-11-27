@@ -1,8 +1,14 @@
 const axios = require('axios');
 const crypto = require('crypto');
+const http = require('node:http');
+const https = require('node:https');
 const db = require('../config/db');
 const env = require('../config/env');
 const logger = require('../utils/logger');
+const {
+  resolveAndPinWebhookTarget,
+  createPinnedLookup,
+} = require('../utils/webhookTarget');
 
 // Keep a live reference to the pool so tests can stub delivery without a DB.
 const query = (text, params) => db.query(text, params);
@@ -64,7 +70,9 @@ const TRANSIENT_STATUSES = new Set([408, 425, 429]);
 
 function isPermanentError(err) {
   const status = err && err.response && err.response.status;
-  return PERMANENT_STATUSES.has(status);
+  return err?.code === 'ERR_WEBHOOK_TARGET_REJECTED'
+    || PERMANENT_STATUSES.has(status)
+    || (status >= 300 && status < 400);
 }
 
 function isTransientError(err) {
@@ -286,8 +294,27 @@ async function attemptDelivery(event) {
   // there but missing from the request. Never log its value.
   if (env.makeApiKey) headers['x-make-apikey'] = env.makeApiKey;
 
+  let agent;
   try {
-    const res = await axios.post(current.target_url, body, { headers, timeout: 10000 });
+    // Resolve every hostname immediately before sending, reject any unsafe
+    // answer, and pin the socket lookup to one validated address. This path is
+    // shared by first delivery, cron retries, and manual resend.
+    const target = await resolveAndPinWebhookTarget(current.target_url, { nodeEnv: env.nodeEnv });
+    const lookup = createPinnedLookup(target.hostname, target.address, target.addressFamily);
+    const isHttps = target.url.protocol === 'https:';
+    agent = isHttps
+      ? new https.Agent({ lookup, keepAlive: false })
+      : new http.Agent({ lookup, keepAlive: false });
+
+    const res = await axios.post(current.target_url, body, {
+      headers,
+      timeout: 10000,
+      maxRedirects: 0,
+      maxContentLength: 64 * 1024,
+      maxBodyLength: 2 * 1024 * 1024,
+      proxy: false,
+      ...(isHttps ? { httpsAgent: agent } : { httpAgent: agent }),
+    });
     // axios resolves 2xx only, but be explicit so a changed adapter cannot
     // silently mark a 3xx/4xx response as delivered.
     if (res.status < 200 || res.status >= 300) {
@@ -335,6 +362,8 @@ async function attemptDelivery(event) {
         : ' (retries exhausted)')
     );
     return false;
+  } finally {
+    if (agent) agent.destroy();
   }
 }
 

@@ -1,4 +1,5 @@
 const path = require('path');
+const { parseWebhookTarget } = require('../utils/webhookTarget');
 
 // Load backend/.env explicitly so configuration works no matter which
 // directory the process was started from (repo root, backend/, PM2, tests).
@@ -14,14 +15,10 @@ function optionalUrl(name) {
   const v = process.env[name];
   if (!v || !v.trim()) return undefined;
   const value = v.trim();
-  let parsed;
   try {
-    parsed = new URL(value);
-  } catch {
-    throw new Error(`${name} must be a valid absolute URL`);
-  }
-  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-    throw new Error(`${name} must use http:// or https://`);
+    parseWebhookTarget(value, { nodeEnv: process.env.NODE_ENV || 'development' });
+  } catch (err) {
+    throw new Error(`${name}: ${err.message}`);
   }
   return value;
 }
