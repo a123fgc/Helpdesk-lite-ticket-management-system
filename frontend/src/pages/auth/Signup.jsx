@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { getApiErrorMessage } from '../../api/axios';
 import Input from '../../components/common/Input';
 import AuthLayout from '../../components/layout/AuthLayout';
 
@@ -18,7 +19,7 @@ export default function Signup() {
       await signup(form.full_name, form.email, form.password);
       navigate('/customer');
     } catch (e) {
-      setErr(e.response?.data?.error || 'Signup failed');
+      setErr(getApiErrorMessage(e, 'Signup failed. Please try again.'));
     } finally { setBusy(false); }
   }
 

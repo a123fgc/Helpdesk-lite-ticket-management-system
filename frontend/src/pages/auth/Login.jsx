@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
+import { getApiErrorMessage } from '../../api/axios';
 import { homeFor } from '../../routes/ProtectedRoute';
 import Input from '../../components/common/Input';
 import AuthLayout from '../../components/layout/AuthLayout';
@@ -19,7 +20,7 @@ export default function Login() {
       const u = await login(form.email, form.password);
       navigate(homeFor(u.role));
     } catch (e) {
-      setErr(e.response?.data?.error || 'Login failed');
+      setErr(getApiErrorMessage(e, 'Login failed. Please check your details and try again.'));
     } finally { setBusy(false); }
   }
 
