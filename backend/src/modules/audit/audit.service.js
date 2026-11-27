@@ -2,7 +2,7 @@ const { query } = require('../../config/db');
 const { paginate } = require('../../utils/paginate');
 
 async function list({ filters }) {
-  const { page, limit, offset } = paginate({ query: filters });
+  const { page, limit, offset } = paginate(filters);
   const conds = [];
   const vals = [];
   let i = 1;

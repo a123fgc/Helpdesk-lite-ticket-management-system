@@ -24,18 +24,18 @@ export const PRIORITY_LABEL = {
 };
 
 export const STATUS_COLOR = {
-  open: 'bg-blue-100 text-blue-800',
-  in_progress: 'bg-amber-100 text-amber-800',
-  waiting_on_customer: 'bg-purple-100 text-purple-800',
-  resolved: 'bg-emerald-100 text-emerald-800',
-  closed: 'bg-slate-200 text-slate-700',
+  open: 'bg-blue-50 text-blue-700 ring-blue-200/70',
+  in_progress: 'bg-amber-50 text-amber-700 ring-amber-200/70',
+  waiting_on_customer: 'bg-violet-50 text-violet-700 ring-violet-200/70',
+  resolved: 'bg-emerald-50 text-emerald-700 ring-emerald-200/70',
+  closed: 'bg-slate-100 text-slate-700 ring-slate-200/80',
 };
 
 export const PRIORITY_COLOR = {
-  low: 'bg-slate-100 text-slate-700',
-  medium: 'bg-blue-100 text-blue-800',
-  high: 'bg-orange-100 text-orange-800',
-  urgent: 'bg-red-100 text-red-800',
+  low: 'bg-slate-100 text-slate-700 ring-slate-200/80',
+  medium: 'bg-sky-50 text-sky-700 ring-sky-200/70',
+  high: 'bg-orange-50 text-orange-700 ring-orange-200/70',
+  urgent: 'bg-rose-50 text-rose-700 ring-rose-200/70',
 };
 
 export const AUDIT_ACTIONS = [

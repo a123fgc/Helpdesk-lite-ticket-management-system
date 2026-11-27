@@ -2,9 +2,14 @@ const { query } = require('../config/db');
 
 /**
  * Idempotency for POST endpoints.
- * Client sends `Idempotency-Key: <uuid>` (or we derive from body hash).
- * If the key was already used, we return the stored response.
- * Otherwise, we let the handler run, then persist its response.
+ *
+ * Client sends `Idempotency-Key: <uuid>`. The key is *claimed* atomically with
+ * an INSERT ... ON CONFLICT DO NOTHING, so two concurrent requests with the
+ * same key cannot both execute the handler.
+ *
+ *  - 2xx response  -> response body is stored and replayed for later calls.
+ *  - 4xx/5xx       -> claim is released so an honest retry can run again.
+ *  - claim held, no response yet -> 409 (the first request is still running).
  */
 function idempotency(req, res, next) {
   const key = req.headers['idempotency-key'];
@@ -12,19 +17,34 @@ function idempotency(req, res, next) {
   req.idempotencyKey = String(key).slice(0, 200);
 
   (async () => {
-    const { rows } = await query('SELECT response FROM idempotency_keys WHERE key=$1', [req.idempotencyKey]);
-    if (rows.length) {
-      return res.status(200).json({ ...rows[0].response, idempotent_replay: true });
+    const { rowCount } = await query(
+      'INSERT INTO idempotency_keys(key, endpoint) VALUES ($1,$2) ON CONFLICT (key) DO NOTHING',
+      [req.idempotencyKey, req.originalUrl]
+    );
+
+    if (!rowCount) {
+      const { rows } = await query('SELECT response FROM idempotency_keys WHERE key=$1', [req.idempotencyKey]);
+      const stored = rows[0] && rows[0].response;
+      if (stored) return res.status(200).json({ ...stored, idempotent_replay: true });
+      return res.status(409).json({
+        error: 'A request with this Idempotency-Key is already in progress',
+      });
     }
-    // wrap res.json to store it
+
     const originalJson = res.json.bind(res);
     res.json = async (body) => {
+      // Only successful outcomes become replays; errors must stay retryable.
+      // The write is awaited so the replay is durable before the client sees
+      // the response.
       try {
-        await query(
-          'INSERT INTO idempotency_keys(key, endpoint, response) VALUES ($1,$2,$3) ON CONFLICT (key) DO NOTHING',
-          [req.idempotencyKey, req.originalUrl, body]
-        );
-      } catch (e) { /* ignore races */ }
+        if (res.statusCode >= 400) {
+          await query('DELETE FROM idempotency_keys WHERE key=$1', [req.idempotencyKey]);
+        } else {
+          await query('UPDATE idempotency_keys SET response=$1 WHERE key=$2', [body, req.idempotencyKey]);
+        }
+      } catch {
+        /* best effort - the TTL sweep cleans up abandoned keys */
+      }
       return originalJson(body);
     };
     next();

@@ -1,13 +1,13 @@
 const VARIANTS = {
   primary: 'btn-primary',
-  ghost:   'btn-ghost',
-  danger:  'btn-danger',
+  ghost: 'btn-ghost',
+  danger: 'btn-danger',
 };
 
 const SIZES = {
-  sm: 'text-xs px-2 py-1',
+  sm: 'px-3 py-1.5 text-xs',
   md: '',
-  lg: 'text-base px-4 py-2',
+  lg: 'px-5 py-3 text-base',
 };
 
 export default function Button({
@@ -20,10 +20,16 @@ export default function Button({
   type = 'button',
   ...rest
 }) {
-  const cls = `${VARIANTS[variant] || VARIANTS.primary} ${SIZES[size] || ''} ${className}`;
+  const cls = `${VARIANTS[variant] || VARIANTS.primary} ${SIZES[size] || ''} ${className}`.trim();
   return (
     <button type={type} className={cls} disabled={disabled || loading} {...rest}>
-      {loading ? '…' : children}
+      {loading && (
+        <svg aria-hidden="true" className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
+          <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" opacity="0.2" />
+          <path d="M4 12a8 8 0 018-8" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+        </svg>
+      )}
+      <span className={loading ? 'opacity-90' : ''}>{children}</span>
     </button>
   );
 }

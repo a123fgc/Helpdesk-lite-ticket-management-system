@@ -61,6 +61,15 @@ export const adminApi = {
   listAgents: () => api.get('/admin/agents'),
   createAgent: (data) => api.post('/admin/agents', data),
   setAgentActive: (id, is_active) => api.patch(`/admin/agents/${id}/active`, { is_active }),
+
+  // Agent ↔ category assignments (drive round-robin ticket routing)
+  listAgentCategories: (agentId) => api.get('/admin/agent-categories', {
+    params: agentId ? { agent_id: agentId } : {},
+  }),
+  assignAgentCategory: (agent_id, category_id) =>
+    api.post('/admin/agent-categories', { agent_id, category_id }),
+  removeAgentCategory: (agent_id, category_id) =>
+    api.delete(`/admin/agent-categories/${agent_id}/${category_id}`),
 };
 
 export const usersApi = {

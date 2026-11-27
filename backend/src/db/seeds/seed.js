@@ -1,6 +1,6 @@
 const bcrypt = require('bcrypt');
-const { pool } = require('../../config/db');
-require('dotenv').config();
+const { pool } = require('../../config/db'); // config/db loads backend/.env for us
+const { generateSurveyToken } = require('../../utils/tokens');
 
 // deterministic-ish random
 let seed = 42;
@@ -176,7 +176,7 @@ async function main() {
         await client.query(
           `INSERT INTO surveys(ticket_id,rating,comment,token,submitted_at)
            VALUES ($1,$2,$3,$4,$5)`,
-          [t.id, randInt(1, 5), 'Overall fine.', 'tok_' + t.id, new Date()]
+          [t.id, randInt(1, 5), 'Overall fine.', generateSurveyToken(), new Date()]
         );
       }
     }

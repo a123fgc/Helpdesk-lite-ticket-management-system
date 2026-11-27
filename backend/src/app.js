@@ -2,32 +2,51 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
-const rateLimit = require('express-rate-limit');
 
 const env = require('./config/env');
+const { query } = require('./config/db');
+const { globalLimiter, authLimiter } = require('./middleware/rateLimits');
 const { notFound, errorHandler } = require('./middleware/errorHandler');
 
 const app = express();
 
-app.use(helmet({ crossOriginResourcePolicy: false }));
+// Required for express-rate-limit to see the real client IP when running
+// behind a reverse proxy (Render, Railway, nginx, ...). Set TRUST_PROXY to
+// the number of hops; leave unset when the app is directly exposed.
+if (process.env.TRUST_PROXY) {
+  const hops = Number(process.env.TRUST_PROXY);
+  app.set('trust proxy', Number.isInteger(hops) && hops > 0 ? hops : 1);
+}
+
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
+  // This service serves JSON only (no HTML/JS), so a CSP would not protect
+  // anything here. The React bundle is served by the frontend host, which is
+  // where CSP belongs.
+  contentSecurityPolicy: false,
+}));
 app.use(cors({ origin: env.clientOrigin, credentials: true }));
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(morgan('dev'));
 
-app.use(
-  rateLimit({
-    windowMs: 60 * 1000,
-    max: 300,
-    standardHeaders: true,
-    legacyHeaders: false,
-  })
-);
+app.use(globalLimiter);
 
-// health
-app.get('/api/health', (_req, res) => res.json({ ok: true, ts: Date.now() }));
+// health - verifies DB connectivity without leaking connection details
+app.get('/api/health', async (_req, res) => {
+  try {
+    await query('SELECT 1');
+    res.json({ status: 'ok', db: 'up', ts: Date.now() });
+  } catch {
+    res.status(503).json({ status: 'error', db: 'down', ts: Date.now() });
+  }
+});
 
-// ── Routes (mounted as we build them) ────────────────────
+// Routes
+// Credential endpoints get their own, much stricter limiter.
+app.use('/api/auth/login',  authLimiter);
+app.use('/api/auth/signup', authLimiter);
+
 app.use('/api/auth',       require('./modules/auth/auth.routes'));
 app.use('/api/users',      require('./modules/users/users.routes'));
 app.use('/api/tickets',    require('./modules/tickets/tickets.routes'));

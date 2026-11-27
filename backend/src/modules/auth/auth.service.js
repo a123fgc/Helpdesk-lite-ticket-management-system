@@ -2,8 +2,10 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const { query } = require('../../config/db');
 const env = require('../../config/env');
+const { assertValidPassword } = require('../../utils/password');
 
 async function signup({ email, password, full_name }) {
+  assertValidPassword(password);
   const exists = await query('SELECT 1 FROM users WHERE email=$1', [email]);
   if (exists.rowCount) {
     const err = new Error('Email already registered'); err.status = 409; throw err;

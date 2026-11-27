@@ -11,16 +11,20 @@ export default function ManageSLAs() {
   const [saving, setSaving] = useState(null);
 
   function load() {
-    slaApi.list().then((r) => setRules(r.data)).catch((e) => setErr(e.response?.data?.error || 'Failed'));
+    slaApi.list()
+      .then((r) => setRules(r.data))
+      .catch((e) => setErr(e.response?.data?.error || 'Failed to load SLA rules'));
   }
+
   useEffect(load, []);
 
-  function updateRow(idx, k, v) {
-    setRules((rs) => rs.map((r, i) => i === idx ? { ...r, [k]: Number(v) } : r));
+  function updateRule(priority, key, value) {
+    setRules((rs) => rs.map((r) => (r.priority === priority ? { ...r, [key]: Number(value) } : r)));
   }
 
   async function save(rule) {
     setSaving(rule.priority);
+    setErr('');
     try {
       await slaApi.upsert({
         priority: rule.priority,
@@ -28,55 +32,80 @@ export default function ManageSLAs() {
         resolution_minutes: rule.resolution_minutes,
       });
       load();
-    } catch (e) { setErr(e.response?.data?.error || 'Failed'); }
-    finally { setSaving(null); }
+    } catch (e) {
+      setErr(e.response?.data?.error || 'Failed to save SLA rule');
+    } finally {
+      setSaving(null);
+    }
   }
 
   return (
     <Layout>
-      <div className="max-w-3xl space-y-4">
-        <h1 className="text-2xl font-semibold">SLA Rules</h1>
-        <p className="text-sm text-slate-500">Minutes from ticket creation.</p>
-        {err && <div className="text-red-600">{err}</div>}
-        {!rules && <Spinner />}
+      <div className="page-shell max-w-5xl">
+        <div className="page-header">
+          <div>
+            <div className="page-eyebrow">Administration</div>
+            <h1 className="page-title">SLA rules</h1>
+            <p className="page-subtitle">Define response and resolution targets by priority. Times are measured in minutes from ticket creation.</p>
+          </div>
+        </div>
+
+        {err && <div role="alert" className="alert-error">{err}</div>}
+        {!rules && <div className="card flex items-center gap-3 p-6 text-sm text-slate-500"><Spinner />Loading SLA rules…</div>}
 
         {rules && (
           <div className="card overflow-hidden">
-            <table className="w-full text-sm">
-              <thead className="bg-slate-50 text-left text-slate-600">
-                <tr>
-                  <th className="px-4 py-2">Priority</th>
-                  <th className="px-4 py-2">Response (min)</th>
-                  <th className="px-4 py-2">Resolution (min)</th>
-                  <th className="px-4 py-2"></th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {rules
-                  .slice()
-                  .sort((a, b) => ORDER.indexOf(a.priority) - ORDER.indexOf(b.priority))
-                  .map((r, i) => (
-                    <tr key={r.priority}>
-                      <td className="px-4 py-2 capitalize font-medium">{r.priority}</td>
-                      <td className="px-4 py-2">
-                        <input className="input max-w-[140px]" type="number" min={1}
-                               value={r.response_minutes}
-                               onChange={(e) => updateRow(i, 'response_minutes', e.target.value)} />
-                      </td>
-                      <td className="px-4 py-2">
-                        <input className="input max-w-[140px]" type="number" min={1}
-                               value={r.resolution_minutes}
-                               onChange={(e) => updateRow(i, 'resolution_minutes', e.target.value)} />
-                      </td>
-                      <td className="px-4 py-2 text-right">
-                        <button className="btn-primary" disabled={saving === r.priority} onClick={() => save(r)}>
-                          {saving === r.priority ? 'Saving…' : 'Save'}
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-              </tbody>
-            </table>
+            <div className="table-wrap">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Priority</th>
+                    <th>Response (min)</th>
+                    <th>Resolution (min)</th>
+                    <th className="text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rules
+                    .slice()
+                    .sort((a, b) => ORDER.indexOf(a.priority) - ORDER.indexOf(b.priority))
+                    .map((r) => (
+                      <tr key={r.priority}>
+                        <td>
+                          <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold capitalize text-slate-700 ring-1 ring-inset ring-slate-200/80">
+                            {r.priority}
+                          </span>
+                        </td>
+                        <td>
+                          <input
+                            className="input max-w-[160px]"
+                            type="number"
+                            min={1}
+                            aria-label={`${r.priority} response minutes`}
+                            value={r.response_minutes}
+                            onChange={(e) => updateRule(r.priority, 'response_minutes', e.target.value)}
+                          />
+                        </td>
+                        <td>
+                          <input
+                            className="input max-w-[160px]"
+                            type="number"
+                            min={1}
+                            aria-label={`${r.priority} resolution minutes`}
+                            value={r.resolution_minutes}
+                            onChange={(e) => updateRule(r.priority, 'resolution_minutes', e.target.value)}
+                          />
+                        </td>
+                        <td className="text-right">
+                          <button className="btn-primary px-4 py-2 text-xs" disabled={saving === r.priority} onClick={() => save(r)}>
+                            {saving === r.priority ? 'Saving…' : 'Save'}
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
       </div>
