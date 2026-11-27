@@ -3,7 +3,14 @@ const assert = require('node:assert/strict');
 require('./helpers/testEnv');
 
 const crypto = require('crypto');
-const { sign, computeNextRetry, safeError, webhookEnvVar } = require('../src/services/webhookSender');
+const {
+  sign,
+  computeNextRetry,
+  safeError,
+  webhookEnvVar,
+  isPermanentError,
+  failureKind,
+} = require('../src/services/webhookSender');
 
 const SECRET = 'unit-test-webhook-secret-not-a-real-credential';
 
@@ -85,6 +92,14 @@ describe('webhook retry backoff', () => {
     const out = computeNextRetry(1);
     assert.ok(out instanceof Date);
     assert.ok(out.getTime() > Date.now());
+  });
+});
+
+describe('webhook redirect classification', () => {
+  it('treats redirects as permanent when automatic redirect following is disabled', () => {
+    const redirect = { response: { status: 302 } };
+    assert.equal(isPermanentError(redirect), true);
+    assert.equal(failureKind(redirect), 'permanent');
   });
 });
 
