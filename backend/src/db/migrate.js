@@ -1,7 +1,8 @@
 const fs = require('fs');
 const path = require('path');
 const { Pool } = require('pg');
-require('dotenv').config();
+// Load backend/.env regardless of the directory the command was run from.
+require('dotenv').config({ path: path.join(__dirname, '..', '..', '.env') });
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,

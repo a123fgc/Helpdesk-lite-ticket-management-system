@@ -16,6 +16,7 @@ import AgentTicketDetail from './pages/agent/AgentTicketDetail';
 
 import AdminDashboard from './pages/admin/AdminDashboard';
 import ManageAgents from './pages/admin/ManageAgents';
+import ManageAgentCategories from './pages/admin/ManageAgentCategories';
 import ManageCategories from './pages/admin/ManageCategories';
 import ManageSLAs from './pages/admin/ManageSLAs';
 import ManageApiKeys from './pages/admin/ManageApiKeys';
@@ -24,7 +25,13 @@ import AuditLog from './pages/admin/AuditLog';
 
 function RootRedirect() {
   const { user, loading } = useAuth();
-  if (loading) return <div className="p-8 text-center text-slate-500">Loading…</div>;
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-100/70 px-4">
+        <div className="card px-6 py-4 text-sm font-medium text-slate-600">Loading…</div>
+      </div>
+    );
+  }
   if (!user) return <Navigate to="/login" replace />;
   return <Navigate to={homeFor(user.role)} replace />;
 }
@@ -50,13 +57,23 @@ export default function App() {
       {/* Admin */}
       <Route path="/admin" element={<ProtectedRoute roles={['admin']}><AdminDashboard /></ProtectedRoute>} />
       <Route path="/admin/agents" element={<ProtectedRoute roles={['admin']}><ManageAgents /></ProtectedRoute>} />
+      <Route path="/admin/agent-categories" element={<ProtectedRoute roles={['admin']}><ManageAgentCategories /></ProtectedRoute>} />
       <Route path="/admin/categories" element={<ProtectedRoute roles={['admin']}><ManageCategories /></ProtectedRoute>} />
       <Route path="/admin/slas" element={<ProtectedRoute roles={['admin']}><ManageSLAs /></ProtectedRoute>} />
       <Route path="/admin/api-keys" element={<ProtectedRoute roles={['admin']}><ManageApiKeys /></ProtectedRoute>} />
       <Route path="/admin/webhooks" element={<ProtectedRoute roles={['admin']}><WebhookEvents /></ProtectedRoute>} />
       <Route path="/admin/audit" element={<ProtectedRoute roles={['admin']}><AuditLog /></ProtectedRoute>} />
 
-      <Route path="*" element={<div className="p-8">404 — Not Found</div>} />
+      <Route path="*" element={
+        <div className="flex min-h-screen items-center justify-center bg-slate-100/70 px-4">
+          <div className="card max-w-md p-8 text-center">
+            <div className="text-xs font-bold uppercase tracking-[0.16em] text-brand-600">404</div>
+            <h1 className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">Page not found</h1>
+            <p className="mt-2 text-sm text-slate-500">The page you’re looking for doesn’t exist or has been moved.</p>
+            <a href="/" className="btn-primary mt-6">Go home</a>
+          </div>
+        </div>
+      } />
     </Routes>
   );
 }

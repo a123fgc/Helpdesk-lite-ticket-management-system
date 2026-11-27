@@ -6,16 +6,23 @@ async function getSlaForPriority(priority) {
 }
 
 /**
- * Compute SLA due dates from a creation date + priority.
+ * Compute SLA due dates from an SLA rule row + a creation date.
+ * Pure: exported so it can be unit-tested without a database.
  */
-async function computeSla(priority, createdAt = new Date()) {
-  const sla = await getSlaForPriority(priority);
+function computeSlaFromRule(sla, createdAt = new Date()) {
   if (!sla) return { response_due: null, resolve_due: null };
   const base = new Date(createdAt).getTime();
   return {
     response_due: new Date(base + sla.response_minutes * 60000),
     resolve_due:  new Date(base + sla.resolution_minutes * 60000),
   };
+}
+
+/**
+ * Compute SLA due dates from a creation date + priority.
+ */
+async function computeSla(priority, createdAt = new Date()) {
+  return computeSlaFromRule(await getSlaForPriority(priority), createdAt);
 }
 
 /**
@@ -35,4 +42,4 @@ async function findNewBreaches() {
   return rows;
 }
 
-module.exports = { getSlaForPriority, computeSla, findNewBreaches };
+module.exports = { getSlaForPriority, computeSla, computeSlaFromRule, findNewBreaches };

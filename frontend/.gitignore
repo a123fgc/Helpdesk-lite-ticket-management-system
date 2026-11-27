@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Build output
+dist/
+build/
+.vite/
+*.tsbuildinfo
+
+# Logs
+*.log
+logs/
+
+# Test / coverage artifacts
+coverage/
+test-results/
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+
+# Temp
+tmp/
+*.tmp
+*.bak

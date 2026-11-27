@@ -6,7 +6,8 @@ const { pickAgentForCategory } = require('../../services/roundRobin');
 const { computeSla } = require('../../services/slaEngine');
 const { queueWebhook } = require('../../services/webhookSender');
 const { audit } = require('../../services/auditLog');
-const { paginate } = require('../../utils/paginate');
+const { paginate, sanitizeSearch } = require('../../utils/paginate');
+const { generateSurveyToken } = require('../../utils/tokens');
 
 const ALLOWED_STATUSES = ['open','in_progress','waiting_on_customer','resolved','closed'];
 const VALID_TRANSITIONS = {
@@ -16,6 +17,39 @@ const VALID_TRANSITIONS = {
   resolved:             ['closed','in_progress'],
   closed:               [],
 };
+
+/**
+ * Who may *read* a ticket.
+ * Customers see only their own tickets; agents and admins manage the whole
+ * queue (the ticket list is already scoped server-side).
+ */
+function canViewTicket(user, ticket) {
+  if (!user || !ticket) return false;
+  if (user.role === 'customer') return ticket.created_by === user.sub;
+  return user.role === 'agent' || user.role === 'admin';
+}
+
+/**
+ * Who may *mutate* a ticket (status change, self-assignment).
+ * Admins are unrestricted. Agents may only act on unassigned tickets or
+ * tickets already assigned to them - re-assigning another agent's ticket
+ * requires an admin. Customers never may.
+ */
+function canManageTicket(user, ticket) {
+  if (!user || !ticket) return false;
+  if (user.role === 'admin') return true;
+  if (user.role !== 'agent') return false;
+  return !ticket.assigned_to || ticket.assigned_to === user.sub;
+}
+
+/**
+ * Status transition validity. Moving to the same status is always allowed
+ * (it makes retries and no-op updates harmless).
+ */
+function isValidTransition(from, to) {
+  if (from === to) return true;
+  return (VALID_TRANSITIONS[from] || []).includes(to);
+}
 
 async function createTicket({ user, body, attachments }) {
   const { subject, description, category_id, priority } = body;
@@ -64,32 +98,38 @@ async function createTicket({ user, body, attachments }) {
 }
 
 async function listTickets({ user, filters }) {
-  const { page, limit, offset } = paginate({ query: filters });
+  const { page, limit, offset } = paginate(filters);
   const conds = [];
   const vals = [];
   let i = 1;
 
+  // Every condition is qualified with `t.` — the row query joins `categories`,
+  // which also has a `description` column, so an unqualified reference would
+  // be ambiguous and fail only on the joined SELECT (not on the COUNT).
   // role scoping
   if (user.role === 'customer') {
-    conds.push(`created_by = $${i++}`); vals.push(user.sub);
+    conds.push(`t.created_by = $${i++}`); vals.push(user.sub);
   } else if (user.role === 'agent') {
     if (filters.mine === 'true') {
-      conds.push(`assigned_to = $${i++}`); vals.push(user.sub);
+      conds.push(`t.assigned_to = $${i++}`); vals.push(user.sub);
     }
   }
 
-  if (filters.status)      { conds.push(`status = $${i++}`);      vals.push(filters.status); }
-  if (filters.unassigned === 'true') { conds.push('assigned_to IS NULL'); }
-  if (filters.priority)    { conds.push(`priority = $${i++}`);    vals.push(filters.priority); }
-  if (filters.category_id) { conds.push(`category_id = $${i++}`); vals.push(filters.category_id); }
-  if (filters.assigned_to) { conds.push(`assigned_to = $${i++}`); vals.push(filters.assigned_to); }
-  if (filters.search) {
-    conds.push(`(subject ILIKE $${i} OR description ILIKE $${i} OR ticket_number::text = $${i + 1})`);
-    vals.push(`%${filters.search}%`, filters.search); i += 2;
+  if (filters.status)      { conds.push(`t.status = $${i++}`);      vals.push(filters.status); }
+  if (filters.unassigned === 'true') { conds.push('t.assigned_to IS NULL'); }
+  if (filters.priority)    { conds.push(`t.priority = $${i++}`);    vals.push(filters.priority); }
+  if (filters.category_id) { conds.push(`t.category_id = $${i++}`); vals.push(filters.category_id); }
+  if (filters.assigned_to) { conds.push(`t.assigned_to = $${i++}`); vals.push(filters.assigned_to); }
+  // Free-text search: bounded in length and LIKE-escaped so `%`/`_` in the
+  // user's input match literally instead of acting as wildcards.
+  const search = sanitizeSearch(filters.search);
+  if (search) {
+    conds.push(`(t.subject ILIKE $${i} ESCAPE '\\' OR t.description ILIKE $${i} ESCAPE '\\' OR t.ticket_number::text = $${i + 1})`);
+    vals.push(`%${search}%`, search); i += 2;
   }
 
   const where = conds.length ? 'WHERE ' + conds.join(' AND ') : '';
-  const totalRes = await query(`SELECT COUNT(*)::int AS n FROM tickets ${where}`, vals);
+  const totalRes = await query(`SELECT COUNT(*)::int AS n FROM tickets t ${where}`, vals);
   const rows = (await query(
     `SELECT t.*,
             u.full_name AS created_by_name,
@@ -139,7 +179,7 @@ async function getTicket({ user, id }) {
   );
   const ticket = rows[0];
   if (!ticket) { const e = new Error('Not found'); e.status = 404; throw e; }
-  if (user.role === 'customer' && ticket.created_by !== user.sub) {
+  if (!canViewTicket(user, ticket)) {
     const e = new Error('Forbidden'); e.status = 403; throw e;
   }
   const attachments = (await query(
@@ -189,9 +229,15 @@ async function getAttachment({ user, ticketId, attachmentId }) {
 }
 
 async function assignToSelf({ user, id }) {
-  if (user.role !== 'agent') { const e = new Error('Forbidden'); e.status = 403; throw e; }
+  if (!['agent', 'admin'].includes(user.role)) { const e = new Error('Forbidden'); e.status = 403; throw e; }
   const old = (await query('SELECT * FROM tickets WHERE id=$1', [id])).rows[0];
   if (!old) { const e = new Error('Not found'); e.status = 404; throw e; }
+
+  // Agents may only take ownership of unassigned tickets or tickets already
+  // theirs. Admins are explicitly authorized to take over any ticket.
+  if (!canManageTicket(user, old)) {
+    const e = new Error('This ticket is assigned to another agent'); e.status = 403; throw e;
+  }
 
   const { rows } = await query(
     `UPDATE tickets SET assigned_to=$1, status = CASE WHEN status='open' THEN 'in_progress' ELSE status END
@@ -215,11 +261,17 @@ async function changeStatus({ user, id, newStatus }) {
   const old = (await query('SELECT * FROM tickets WHERE id=$1', [id])).rows[0];
   if (!old) { const e = new Error('Not found'); e.status = 404; throw e; }
 
-  if (user.role === 'agent' && !VALID_TRANSITIONS[old.status].includes(newStatus) && newStatus !== old.status) {
-    const e = new Error(`Illegal transition ${old.status} → ${newStatus}`); e.status = 400; throw e;
-  }
   if (user.role === 'customer') {
     const e = new Error('Customers cannot change status'); e.status = 403; throw e;
+  }
+  // Admins may set any status; agents only on tickets they own or that are
+  // unassigned (see canManageTicket).
+  if (!canManageTicket(user, old)) {
+    const e = new Error('This ticket is assigned to another agent'); e.status = 403; throw e;
+  }
+
+  if (user.role === 'agent' && !isValidTransition(old.status, newStatus)) {
+    const e = new Error(`Illegal transition ${old.status} → ${newStatus}`); e.status = 400; throw e;
   }
 
   const resolvedAt = newStatus === 'resolved' ? new Date() : old.resolved_at;
@@ -240,8 +292,8 @@ async function changeStatus({ user, id, newStatus }) {
   });
   await queueWebhook('ticket.status_changed', ticket, { from: old.status, to: newStatus, actor: user.sub });
   if (newStatus === 'resolved') {
-    // create survey token
-    const token = 'tok_' + ticket.id;
+    // cryptographically secure, unguessable survey token
+    const token = generateSurveyToken();
     await query(
       `INSERT INTO surveys(ticket_id,token) VALUES ($1,$2)
        ON CONFLICT (ticket_id) DO NOTHING`,
@@ -255,4 +307,5 @@ async function changeStatus({ user, id, newStatus }) {
 module.exports = {
   createTicket, listTickets, ticketSummary, getTicket, getAttachment, assignToSelf, changeStatus,
   ALLOWED_STATUSES, VALID_TRANSITIONS,
+  canViewTicket, canManageTicket, isValidTransition,
 };

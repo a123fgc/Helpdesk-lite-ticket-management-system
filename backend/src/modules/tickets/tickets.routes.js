@@ -99,7 +99,7 @@ router.get('/', c.list);
 router.get('/summary', c.summary);
 router.get('/:id/attachments/:attachmentId', c.downloadAttachment);
 router.get('/:id', c.get);
-router.post('/:id/assign-self', requireRole('agent'), c.assignSelf);
+router.post('/:id/assign-self', requireRole('agent','admin'), c.assignSelf);
 router.patch('/:id/status', requireRole('agent','admin'), c.changeStatus);
 
 module.exports = router;

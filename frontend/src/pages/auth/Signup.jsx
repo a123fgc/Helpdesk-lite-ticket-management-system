@@ -45,7 +45,8 @@ export default function Signup() {
           label="Password"
           type="password"
           required
-          minLength={6}
+          minLength={8}
+          placeholder="At least 8 characters"
           autoComplete="new-password"
           value={form.password}
           onChange={(e) => setForm({ ...form, password: e.target.value })}

@@ -93,6 +93,9 @@ async function listAgents() {
 
 async function createAgent({ email, password, full_name }) {
   const bcrypt = require('bcrypt');
+  const { assertValidPassword } = require('../../utils/password');
+  if (!email || !full_name) { const e = new Error('email, full_name required'); e.status = 400; throw e; }
+  assertValidPassword(password);
   const exists = await query('SELECT 1 FROM users WHERE email=$1', [email]);
   if (exists.rowCount) { const e = new Error('Email exists'); e.status = 409; throw e; }
   const hash = await bcrypt.hash(password, 10);
